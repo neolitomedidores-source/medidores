@@ -378,7 +378,7 @@ async function fotoOrden(foto) {
 }
 
 function badgeFila(f) {
-  if (ABIERTOS.some(t => t.fila && t.fila.cuenta === f.cuenta)) return '<span class="badge app">FALTA MEDIDOR NUEVO</span>';
+  if (ABIERTOS.some(t => t.fila && t.fila.cuenta === f.cuenta) || /^PENDIENTE/.test(f.app)) return '<span class="badge app">FALTA MEDIDOR NUEVO</span>';
   if (f.app) return '<span class="badge app">YA CAPTURADA EN APP</span>';
   if (f.estatus === 'INSTALADO') return '<span class="badge inst">INSTALADO</span>';
   return '';
@@ -433,7 +433,10 @@ async function seleccionar(f, leido) {
     reanudar(abierto);
     return;
   }
-  if (f.app || f.estatus === 'INSTALADO') {
+  if (/^PENDIENTE/.test(f.app)) {
+    const ok = await confirmar(`La cuenta ${f.cuenta} quedó pendiente en otro teléfono (${f.app}). Lo correcto es cerrarla en ese teléfono. ¿Empezar aquí desde el medidor retirado?`, 'Empezar aquí', 'Cancelar');
+    if (!ok) return;
+  } else if (f.app || f.estatus === 'INSTALADO') {
     const ok = await confirmar(`La cuenta ${f.cuenta} ya aparece como ${f.app ? 'capturada en la app (' + f.app + ')' : 'INSTALADA en el Excel'}. ¿Continuar de todos modos?`, 'Continuar', 'Cancelar');
     if (!ok) return;
   }
@@ -685,6 +688,18 @@ async function dejarPendiente() {
       });
       foto.qid = id;
     }
+    // Renglón en la hoja con estatus PENDIENTE; al cerrar el cambio se actualiza el mismo renglón.
+    await DB.colaPoner({
+      uid: T.uid + '-registro-p', tipo: 'registro', creado: Date.now() + 1, registro: {
+        uid: T.uid, fechaCaptura: ahora(), folio: f.folio, cuenta: f.cuenta, cuentaCompleta: T.cuentaCompleta,
+        domicilio: domicilio(f), estatus: 'PENDIENTE MEDIDOR NUEVO',
+        medidorRetirado: f.mActual, lecturaRetirado: T.lectura.antes || '', medidorNuevo: '', lecturaNuevo: '',
+        sello: '', motivo: '', observaciones: '',
+        lat: gps ? gps.lat : '', lng: gps ? gps.lng : '', precision: gps ? gps.acc : '',
+        revisionAntes: T.rev.antes ? T.rev.antes.estado : 'SIN VERIFICAR', revisionDespues: '', carpeta,
+        refs: { fotoOrden: T.fotos.orden ? T.fotos.orden.qid : null, fotoAntes: T.fotos.antes ? T.fotos.antes.qid : null, fotoDespues: null, fotosExtra: [] }
+      }
+    });
     ABIERTOS = ABIERTOS.filter(t => t.uid !== T.uid && !(t.fila && t.fila.cuenta === f.cuenta));
     ABIERTOS.push(T);
     await DB.set('abiertos', ABIERTOS);
@@ -801,8 +816,10 @@ async function sincronizar() {
         const hist = (await DB.get('hist')) || [];
         const h = hist.find(x => x.uid === reg.uid);
         if (h) { h.subido = true; await DB.set('hist', hist); }
-        for (const id of [it.registro.refs.fotoOrden, it.registro.refs.fotoAntes, it.registro.refs.fotoDespues].concat(it.registro.refs.fotosExtra)) {
-          if (id) await DB.del('url:' + id);
+        if (!/^PENDIENTE/.test(reg.estatus)) { // las ligas se necesitan otra vez al cerrar el cambio
+          for (const id of [it.registro.refs.fotoOrden, it.registro.refs.fotoAntes, it.registro.refs.fotoDespues].concat(it.registro.refs.fotosExtra)) {
+            if (id) await DB.del('url:' + id);
+          }
         }
       }
       await DB.colaQuitar(it.uid);
