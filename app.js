@@ -261,15 +261,16 @@ async function procesarFoto(file) {
   return { blob, ia };
 }
 
-let camDestino = null;
+let camDestino = null, camK = null;
 $$('[data-cam]').forEach(b => b.addEventListener('click', () => {
   camDestino = b.dataset.cam;
+  camK = b.dataset.k || null;
   $('#cam').value = '';
   $('#cam').click();
 }));
 $('#cam').addEventListener('change', async e => {
   const file = e.target.files && e.target.files[0];
-  if (!file || !T) return;
+  if (!file || (!T && camDestino !== 'edit')) return;
   const destino = camDestino;
   let foto;
   try {
@@ -280,6 +281,9 @@ $('#cam').addEventListener('change', async e => {
   }
   foto.hora = ahora();
   foto.id = uid();
+  if (destino === 'edit') { fotoEdicion(foto); return; }
+  const previa = destino === 'orden' ? T.fotos.orden : destino === 'piz' ? T.fotos[etapa] : null;
+  if (previa && (previa.qid || previa.reemplaza)) foto.reemplaza = true; // corrige una foto que ya se mandó
   if (destino === 'orden') fotoOrden(foto);
   else if (destino === 'piz') fotoPizarron(foto);
   else if (destino === 'extra') { T.fotos.extras.push(foto); pintarFinal(); }
@@ -471,6 +475,7 @@ function irPizarron(et) {
   $('#pzLectLabel').classList.toggle('hidden', !antes);
   $('#pzLectura').classList.toggle('hidden', !antes);
   $('#pzSelloBox').classList.toggle('hidden', antes);
+  $('#pzAtras').textContent = antes ? '← Regresar' : '✏️ Corregir medidor retirado (lectura o foto)';
   $('#pzSello').value = T.sello || '';
   pintarSinSello();
   const foto = T.fotos[et];
@@ -635,6 +640,11 @@ function actualizarPie() {
     // En el paso del medidor nuevo: salir y dejar la cuenta pendiente para cerrarla después.
     $('#btnPie2').classList.toggle('hidden', etapa !== 'despues');
     $('#btnPie2').disabled = !T.fotos.antes || !T.lectura.antes;
+  } else if (pantalla === 'editar' && E) {
+    pie.classList.remove('hidden');
+    $('#btnPie2').classList.add('hidden');
+    b.textContent = '✔ Guardar cambios';
+    b.disabled = !cambiosEdicion().length;
   } else if (pantalla === 'final' && T) {
     pie.classList.remove('hidden');
     $('#btnPie2').classList.add('hidden');
@@ -654,6 +664,8 @@ $('#btnPie').addEventListener('click', async () => {
     }
     if (etapa === 'antes') irPizarron('despues');
     else { ir('final'); pintarFinal(); }
+  } else if (pantalla === 'editar') {
+    await guardarEdicion();
   } else if (pantalla === 'final') {
     await guardarCambio('INSTALADO');
   }
@@ -683,7 +695,7 @@ async function dejarPendiente() {
       if (!foto || foto.qid) continue;
       const id = T.uid + '-' + nombre + (foto.id ? '-' + foto.id : '');
       await DB.colaPoner({
-        uid: id, tipo: 'foto', creado: Date.now(), nombre, carpeta, blob: foto.blob,
+        uid: id, tipo: 'foto', creado: Date.now(), nombre, carpeta, blob: foto.blob, reemplazar: !!foto.reemplaza,
         descripcion: [`Foto: ${etiqueta}`, `Tomada: ${foto.hora}`].concat(base).join('\n')
       });
       foto.qid = id;
@@ -740,7 +752,7 @@ async function guardarCambio(estatus) {
     if (foto.qid) return foto.qid; // ya se mandó a la cola (cambio que se dejó pendiente)
     const id = T.uid + '-' + nombre + (foto.id ? '-' + foto.id : '');
     fotos.push({
-      uid: id, tipo: 'foto', creado: Date.now() + fotos.length, nombre, carpeta, blob: foto.blob,
+      uid: id, tipo: 'foto', creado: Date.now() + fotos.length, nombre, carpeta, blob: foto.blob, reemplazar: !!foto.reemplaza,
       descripcion: [`Foto: ${etiqueta}`, `Tomada: ${foto.hora}`].concat(base).join('\n')
     });
     foto.qid = id;
@@ -772,6 +784,7 @@ async function guardarCambio(estatus) {
     toast('No hay espacio en el teléfono para guardar las fotos. Libera espacio e intenta de nuevo.', 6000);
     return;
   }
+  await guardarCerrado(T, reg);
   const hist = (await DB.get('hist')) || [];
   hist.unshift({ uid: T.uid, cuenta: f.cuenta, domicilio: domicilio(f), estatus, fecha: reg.fechaCaptura, subido: false });
   await DB.set('hist', hist.slice(0, 60));
@@ -797,7 +810,7 @@ async function sincronizar() {
       if (!S.token) break;
       if (it.tipo === 'foto') {
         const r = await api('subirFoto', {
-          uid: it.uid, nombre: it.nombre, carpeta: it.carpeta, descripcion: it.descripcion,
+          uid: it.uid, nombre: it.nombre, carpeta: it.carpeta, descripcion: it.descripcion, reemplazar: !!it.reemplazar,
           mime: 'image/jpeg', data: await aBase64(it.blob)
         }, 180000);
         if (!r.ok) throw new Error(r.error || 'Error al subir foto');
@@ -805,11 +818,12 @@ async function sincronizar() {
       } else {
         const reg = Object.assign({}, it.registro);
         const url = async id => (id ? (await DB.get('url:' + id)) || '' : '');
-        reg.fotoOrden = await url(reg.refs.fotoOrden);
-        reg.fotoAntes = await url(reg.refs.fotoAntes);
-        reg.fotoDespues = await url(reg.refs.fotoDespues);
-        reg.fotosExtra = [];
-        for (const id of reg.refs.fotosExtra) reg.fotosExtra.push(await url(id));
+        const R = reg.refs || {};
+        for (const k of ['fotoOrden', 'fotoAntes', 'fotoDespues']) if (!reg.parcial || R[k]) reg[k] = await url(R[k]);
+        if (!reg.parcial || (R.fotosExtra || []).length) {
+          reg.fotosExtra = [];
+          for (const id of (R.fotosExtra || [])) reg.fotosExtra.push(await url(id));
+        }
         delete reg.refs;
         const r = await api('registrar', { registro: reg });
         if (!r.ok) throw new Error(r.error || 'Error al registrar');
@@ -860,12 +874,145 @@ window.addEventListener('online', () => { pintarRed(); sincronizar(); });
 window.addEventListener('offline', pintarRed);
 setInterval(() => { if (navigator.onLine) sincronizar(); }, 60000);
 
+/* ------------------------------------------------------------------ editar registros ya guardados */
+let E = null; // registro en edición
+
+async function guardarCerrado(t, reg) {
+  const ft = k => (t.fotos[k] ? { ia: t.fotos[k].ia, hora: t.fotos[k].hora } : null);
+  const lista = ((await DB.get('cerrados')) || []).filter(x => x.uid !== t.uid);
+  lista.unshift({
+    uid: t.uid, fila: t.fila, cuentaCompleta: t.cuentaCompleta, estatus: reg.estatus, carpeta: reg.carpeta, fecha: reg.fechaCaptura,
+    lectura: { antes: t.lectura.antes || '' }, sello: reg.sello === 'SIN SELLO' ? '' : (reg.sello || ''), sinSello: reg.sello === 'SIN SELLO',
+    obs: reg.observaciones || '',
+    fotos: { orden: ft('orden'), antes: ft('antes'), despues: reg.estatus === 'INSTALADO' ? ft('despues') : null }
+  });
+  await DB.set('cerrados', lista.slice(0, 40));
+}
+
+async function abrirEdicion(uid) {
+  const x = ((await DB.get('cerrados')) || []).find(c => c.uid === uid);
+  if (!x) { toast('Ese registro ya no está en este teléfono'); return; }
+  E = JSON.parse(JSON.stringify(x));
+  E.orig = JSON.parse(JSON.stringify(x));
+  E.nuevas = {}; E.rev = {};
+  const f = E.fila, inst = E.estatus === 'INSTALADO';
+  $('#edCuenta').textContent = 'Cuenta ' + f.cuenta;
+  $('#edInfo').textContent = `${domicilio(f)} · ${E.estatus} · ${E.fecha}`;
+  $('#edLectBox').classList.toggle('hidden', !E.fotos.antes);
+  $('#edLectura').value = E.lectura.antes;
+  $('#edSelloBox').classList.toggle('hidden', !inst);
+  $('#edSello').value = E.sello; $('#edSinSello').checked = E.sinSello; $('#edSello').disabled = E.sinSello;
+  $('#edObs').value = E.obs;
+  $$('#edFotos [data-edk]').forEach(box => {
+    const k = box.dataset.edk, fo = E.fotos[k];
+    box.classList.toggle('hidden', k === 'despues' ? !inst : k === 'antes' ? !fo : false);
+    const im = box.querySelector('img');
+    if (fo && fo.ia) { im.src = 'data:image/jpeg;base64,' + fo.ia; im.classList.remove('hidden'); } else { im.removeAttribute('src'); im.classList.add('hidden'); }
+    box.querySelector('button').textContent = fo ? '📷 Cambiar foto' : '📷 Agregar foto';
+    box.querySelector('.edRev').innerHTML = '';
+  });
+  ir('editar');
+}
+
+function cambiosEdicion() {
+  if (!E) return [];
+  const c = [];
+  if (dig($('#edLectura').value) !== (E.orig.lectura.antes || '') && E.fotos.antes) c.push('lectura');
+  if (E.estatus === 'INSTALADO' && ($('#edSinSello').checked !== E.orig.sinSello || (!$('#edSinSello').checked && dig($('#edSello').value) !== E.orig.sello))) c.push('sello');
+  if ($('#edObs').value.trim() !== (E.orig.obs || '').trim()) c.push('observaciones');
+  Object.keys(E.nuevas).forEach(k => c.push('foto ' + ({ antes: 'medidor retirado', despues: 'medidor nuevo', orden: 'orden' }[k])));
+  return c;
+}
+['#edLectura', '#edSello', '#edObs'].forEach(s => $(s).addEventListener('input', e => {
+  if (s !== '#edObs') e.target.value = dig(e.target.value);
+  actualizarPie();
+}));
+$('#edSinSello').addEventListener('change', e => { $('#edSello').disabled = e.target.checked; if (e.target.checked) $('#edSello').value = ''; actualizarPie(); });
+
+async function fotoEdicion(foto) {
+  const ed = E;
+  if (!ed || !camK) return;
+  const k = camK, box = $(`#edFotos [data-edk="${k}"]`);
+  ed.nuevas[k] = foto;
+  const im = box.querySelector('img');
+  im.src = 'data:image/jpeg;base64,' + foto.ia; im.classList.remove('hidden');
+  actualizarPie();
+  const rev = box.querySelector('.edRev');
+  if (k === 'orden') { rev.innerHTML = '<div class="aviso ok">✔ Foto nueva lista para guardar</div>'; return; }
+  if (!navigator.onLine) { ed.rev[k] = 'SIN VERIFICAR'; rev.innerHTML = '<div class="aviso info">Foto nueva lista. Sin señal: no se revisó.</div>'; return; }
+  rev.innerHTML = '<div class="aviso info"><span class="spinner"></span>Revisando lo escrito en el pizarrón…</div>';
+  try {
+    const r = await api('leerPizarron', { imagen: foto.ia }, 100000);
+    if (!r.ok) { ed.rev[k] = 'SIN VERIFICAR'; rev.innerHTML = `<div class="aviso info">Foto nueva lista. ${esc(r.error || 'No se revisó')}</div>`; return; }
+    const guardado = T;
+    T = { fila: ed.fila, lectura: { antes: dig($('#edLectura').value) }, sello: dig($('#edSello').value), sinSello: $('#edSinSello').checked };
+    const res = compararPizarron(r.leido || {}, k);
+    T = guardado;
+    ed.rev[k] = res.estado;
+    const sim = { ok: '✔', mal: '✖', q: '?' };
+    rev.innerHTML = `<div class="aviso ${res.estado === 'OK' ? 'ok' : res.estado.startsWith('REVISAR') ? 'mal' : 'info'}"><b>${esc(res.estado === 'OK' ? '✔ El pizarrón coincide' : res.estado)}</b>` +
+      res.items.map(i => `<div class="chk"><span>${esc(i.campo)}: ${esc(i.leido || '—')}</span><b class="${i.est}">${sim[i.est]}</b></div>`).join('') + '</div>';
+  } catch (e) {
+    ed.rev[k] = 'SIN VERIFICAR';
+    rev.innerHTML = `<div class="aviso info">Foto nueva lista. No se revisó: ${esc(e.message)}</div>`;
+  }
+}
+
+async function guardarEdicion() {
+  const cambios = cambiosEdicion();
+  if (!cambios.length) { toast('No hay cambios'); return; }
+  const f = E.fila, c = dig(f.cuenta) || f.cuenta;
+  const reg = { uid: E.uid, parcial: true, cambios: cambios.join(', '), refs: {} };
+  if (cambios.includes('lectura')) reg.lecturaRetirado = dig($('#edLectura').value);
+  if (cambios.includes('sello')) reg.sello = $('#edSinSello').checked ? 'SIN SELLO' : dig($('#edSello').value);
+  if (cambios.includes('observaciones')) reg.observaciones = $('#edObs').value.trim();
+  const nombres = { antes: `${c}_antes_01.jpg`, despues: `${c}_despues_02.jpg`, orden: `${c}_orden.jpg` };
+  const campos = { antes: 'fotoAntes', despues: 'fotoDespues', orden: 'fotoOrden' };
+  const etiqueta = { antes: 'ANTES – medidor retirado (corregida)', despues: 'DESPUÉS – medidor nuevo (corregida)', orden: 'ORDEN (corregida)' };
+  try {
+    for (const k of Object.keys(E.nuevas)) {
+      const fo = E.nuevas[k], id = E.uid + '-' + nombres[k] + '-' + fo.id;
+      await DB.colaPoner({
+        uid: id, tipo: 'foto', creado: Date.now(), nombre: nombres[k], carpeta: E.carpeta, blob: fo.blob, reemplazar: true,
+        descripcion: [`Foto: ${etiqueta[k]}`, `Tomada: ${fo.hora}`, `Cuenta: ${E.cuentaCompleta || f.cuenta}`, `Folio: ${f.folio}`, `Domicilio: ${domicilio(f)}`].join('\n')
+      });
+      reg.refs[campos[k]] = id;
+      if (k === 'antes') reg.revisionAntes = E.rev.antes || 'SIN VERIFICAR';
+      if (k === 'despues') reg.revisionDespues = E.rev.despues || 'SIN VERIFICAR';
+    }
+    await DB.colaPoner({ uid: E.uid + '-edit-' + Date.now(), tipo: 'registro', creado: Date.now() + 10, registro: reg });
+  } catch (e) {
+    toast('No hay espacio en el teléfono para guardar. Libera espacio e intenta de nuevo.', 6000);
+    return;
+  }
+  // Actualizar la copia local
+  const lista = (await DB.get('cerrados')) || [];
+  const x = lista.find(y => y.uid === E.uid);
+  if (x) {
+    if (reg.lecturaRetirado !== undefined) x.lectura.antes = reg.lecturaRetirado;
+    if (reg.sello !== undefined) { x.sinSello = reg.sello === 'SIN SELLO'; x.sello = x.sinSello ? '' : reg.sello; }
+    if (reg.observaciones !== undefined) x.obs = reg.observaciones;
+    Object.keys(E.nuevas).forEach(k => { x.fotos[k] = { ia: E.nuevas[k].ia, hora: E.nuevas[k].hora }; });
+    await DB.set('cerrados', lista);
+  }
+  const hist = (await DB.get('hist')) || [];
+  const h = hist.find(y => y.uid === E.uid);
+  if (h) { h.editado = true; await DB.set('hist', hist); }
+  toast('✔ Corrección guardada: ' + cambios.join(', '));
+  E = null;
+  ir('inicio');
+  sincronizar();
+}
+
 /* ------------------------------------------------------------------ inicio */
+let cerradosUids = new Set();
 async function pintarHist() {
+  cerradosUids = new Set(((await DB.get('cerrados')) || []).map(c => c.uid));
   const hist = (await DB.get('hist')) || [];
   $('#listaHist').innerHTML = hist.length
-    ? hist.slice(0, 20).map(h => `<div class="hist"><span><b>${esc(h.cuenta)}</b> · ${esc(h.domicilio)}<br><span class="muted">${esc(h.fecha)} · ${esc(h.estatus)}</span></span><span>${h.subido ? '✔' : '⏸'}</span></div>`).join('')
+    ? hist.slice(0, 20).map(h => `<div class="hist"><span><b>${esc(h.cuenta)}</b> · ${esc(h.domicilio)}<br><span class="muted">${esc(h.fecha)} · ${esc(h.estatus)}${h.editado ? ' · editado' : ''}</span></span><span style="display:flex;gap:8px;align-items:center">${h.subido ? '✔' : '⏸'}${cerradosUids.has(h.uid) ? `<button class="b2" data-edit="${esc(h.uid)}" style="width:auto;margin:0;padding:8px 12px;font-size:15px">✏️ Editar</button>` : ''}</span></div>`).join('')
     : 'Ninguno todavía.';
+  $$('#listaHist [data-edit]').forEach(b => b.onclick = () => abrirEdicion(b.dataset.edit));
 }
 
 function pintarAbiertos() {

@@ -194,6 +194,52 @@
     <button class="b3" id="pzAtras">← Regresar</button>
   </section>
 
+  <!-- EDITAR UN REGISTRO YA GUARDADO -->
+  <section id="s-editar">
+    <div class="card">
+      <p class="paso">Editar registro</p>
+      <h2 id="edCuenta">—</h2>
+      <div class="muted" id="edInfo"></div>
+      <p class="muted" style="margin-top:8px">Cambia solo lo que esté mal. Lo demás se queda igual.</p>
+    </div>
+    <div class="card">
+      <div id="edLectBox">
+        <label for="edLectura" style="margin-top:0">Lectura del medidor retirado</label>
+        <input id="edLectura" class="num" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+      </div>
+      <div id="edSelloBox">
+        <label for="edSello">Número de sello</label>
+        <input id="edSello" class="num" inputmode="numeric" autocomplete="off">
+        <label style="display:flex;gap:10px;align-items:center;font-weight:600;margin-top:10px">
+          <input type="checkbox" id="edSinSello" style="width:26px;height:26px;flex:0 0 auto"> No se pudo poner el sello
+        </label>
+      </div>
+      <label for="edObs">Observaciones</label>
+      <textarea id="edObs" rows="2"></textarea>
+    </div>
+    <div class="card" id="edFotos">
+      <div data-edk="antes">
+        <b>Foto medidor retirado</b>
+        <img class="foto" alt="">
+        <button class="b2 camara" data-cam="edit" data-k="antes">📷 Cambiar foto</button>
+        <div class="edRev"></div>
+      </div>
+      <div data-edk="despues" style="margin-top:18px">
+        <b>Foto medidor nuevo</b>
+        <img class="foto" alt="">
+        <button class="b2 camara" data-cam="edit" data-k="despues">📷 Cambiar foto</button>
+        <div class="edRev"></div>
+      </div>
+      <div data-edk="orden" style="margin-top:18px">
+        <b>Foto de la orden</b>
+        <img class="foto" alt="">
+        <button class="b2 camara" data-cam="edit" data-k="orden">📷 Cambiar foto</button>
+        <div class="edRev"></div>
+      </div>
+    </div>
+    <button class="b3" data-ir="inicio">Cancelar</button>
+  </section>
+
   <!-- FINAL -->
   <section id="s-final">
     <div class="card">
