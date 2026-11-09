@@ -84,6 +84,7 @@
 </style>
 </head>
 <body>
+<div id="bannerVersion" class="hidden" style="background:#f2b705;color:#2a1d00;padding:10px 14px;font-weight:700;text-align:center;font-size:15px">Hay una versión nueva de la app. Se actualizará al terminar este cambio.</div>
 <header>
   <h1 id="titulo">Medidores · Campo</h1>
   <span id="chipCola" class="chip hidden"></span>
@@ -138,6 +139,7 @@
       <button class="b2" id="btnBase">Actualizar base</button>
     </div>
     <button class="b3" id="btnSalir">Salir de la cuadrilla</button>
+    <p class="muted" style="text-align:center" id="txtVersion"></p>
   </section>
 
   <!-- PASO 1: ORDEN -->
@@ -290,6 +292,7 @@
 <input type="file" id="cam" accept="image/*" capture="environment" class="hidden">
 <div id="toast"></div>
 
+<script src="version.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

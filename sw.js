@@ -1,6 +1,6 @@
 // Guarda la app en el teléfono para que abra aunque no haya señal.
-const CACHE = 'medidores-v2';
-const ARCHIVOS = ['./', './index.html', './app.js', './config.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'medidores-v3';
+const ARCHIVOS = ['./', './index.html', './app.js', './config.js', './version.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARCHIVOS)).then(() => self.skipWaiting()));

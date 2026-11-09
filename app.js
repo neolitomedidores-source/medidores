@@ -119,7 +119,10 @@ function ir(p) {
   $('#titulo').textContent = S.cuadrilla && p !== 'login' ? S.cuadrilla : 'Medidores · Campo';
   window.scrollTo(0, 0);
   actualizarPie();
-  if (p === 'inicio') pintarInicio();
+  if (p === 'inicio') {
+    if (versionNueva) { location.reload(); return; }
+    pintarInicio();
+  }
   if (p === 'login') cargarCuadrillas();
 }
 $$('[data-ir]').forEach(b => b.addEventListener('click', () => ir(b.dataset.ir)));
@@ -680,7 +683,7 @@ async function dejarPendiente() {
     // Renglón en la hoja con estatus PENDIENTE; al cerrar el cambio se actualiza el mismo renglón.
     await DB.colaPoner({
       uid: T.uid + '-registro-p', tipo: 'registro', creado: Date.now() + 1, registro: {
-        uid: T.uid, fechaCaptura: ahora(), folio: f.folio, cuenta: f.cuenta, cuentaCompleta: T.cuentaCompleta,
+        uid: T.uid, versionApp: window.APP_VERSION, fechaCaptura: ahora(), folio: f.folio, cuenta: f.cuenta, cuentaCompleta: T.cuentaCompleta,
         domicilio: domicilio(f), estatus: 'PENDIENTE MEDIDOR NUEVO',
         medidorRetirado: f.mActual, lecturaRetirado: T.lectura.antes || '', medidorNuevo: '', lecturaNuevo: '',
         sello: '', motivo: '', observaciones: '',
@@ -737,7 +740,7 @@ async function guardarCambio(estatus) {
   };
   const instalado = estatus === 'INSTALADO';
   const reg = {
-    uid: T.uid, fechaCaptura: ahora(), folio: f.folio, cuenta: f.cuenta, cuentaCompleta: T.cuentaCompleta,
+    uid: T.uid, versionApp: window.APP_VERSION, fechaCaptura: ahora(), folio: f.folio, cuenta: f.cuenta, cuentaCompleta: T.cuentaCompleta,
     domicilio: domicilio(f), estatus,
     medidorRetirado: instalado ? f.mActual : '', lecturaRetirado: T.lectura.antes || '',
     medidorNuevo: instalado ? f.mNuevo : '', lecturaNuevo: instalado ? (T.lectura.despues || '0') : '',
@@ -921,7 +924,7 @@ async function guardarEdicion() {
   const cambios = cambiosEdicion();
   if (!cambios.length) { toast('No hay cambios'); return; }
   const f = E.fila, c = dig(f.cuenta) || f.cuenta;
-  const reg = { uid: E.uid, parcial: true, cambios: cambios.join(', '), refs: {} };
+  const reg = { uid: E.uid, versionApp: window.APP_VERSION, parcial: true, cambios: cambios.join(', '), refs: {} };
   if (cambios.includes('lectura')) reg.lecturaRetirado = dig($('#edLectura').value);
   if (cambios.includes('sello')) reg.sello = $('#edSinSello').checked ? 'SIN SELLO' : dig($('#edSello').value);
   if (cambios.includes('observaciones')) reg.observaciones = $('#edObs').value.trim();
@@ -1039,10 +1042,31 @@ $('#cfgGuardar').addEventListener('click', () => {
   S.api = u; guardarSesion(); ir('login');
 });
 
+/* ------------------------------------------------------------------ actualización automática */
+let versionNueva = null;
+async function revisarVersion() {
+  if (!navigator.onLine) return;
+  try {
+    const txt = await (await fetch('version.js?v=' + Date.now(), { cache: 'no-store' })).text();
+    const v = (txt.match(/APP_VERSION\s*=\s*'([^']+)'/) || [])[1];
+    if (!v || v === window.APP_VERSION) { sessionStorage.removeItem('med_recarga'); return; }
+    if (sessionStorage.getItem('med_recarga') === v) return; // ya se intentó; evita recargar en ciclo
+    versionNueva = v;
+    sessionStorage.setItem('med_recarga', v);
+    const ocupado = (T && T.fila) || E || ['orden', 'piz', 'final', 'editar'].includes(pantalla);
+    if (ocupado) $('#bannerVersion').classList.remove('hidden'); // se recarga al volver al inicio
+    else { toast('Actualizando la app…'); setTimeout(() => location.reload(), 600); }
+  } catch (e) { /* sin conexión: se revisa después */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') revisarVersion(); });
+setInterval(revisarVersion, 15 * 60 * 1000);
+
 /* ------------------------------------------------------------------ arranque */
 (async function arrancar() {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   pintarRed();
+  $('#txtVersion').textContent = 'Versión ' + (window.APP_VERSION || '¿?');
+  revisarVersion();
   await cargarBaseLocal();
   ABIERTOS = (await DB.get('abiertos')) || [];
   if (!apiUrl()) { ir('config'); return; }
