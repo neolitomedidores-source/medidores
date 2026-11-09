@@ -279,6 +279,7 @@ $('#cam').addEventListener('change', async e => {
     return;
   }
   foto.hora = ahora();
+  foto.id = uid();
   if (destino === 'orden') fotoOrden(foto);
   else if (destino === 'piz') fotoPizarron(foto);
   else if (destino === 'extra') { T.fotos.extras.push(foto); pintarFinal(); }
@@ -331,6 +332,7 @@ $('#btnNuevo').addEventListener('click', () => {
   iniciarGPS();
   limpiarOrden();
   ir('orden');
+  setTimeout(() => $('#busca').focus(), 50);
 });
 
 /* ---------- Paso 1: orden */
@@ -345,16 +347,19 @@ function limpiarOrden() {
 async function fotoOrden(foto) {
   T.fotos.orden = foto;
   mostrarImg('#imgOrden', foto.blob);
-  $('#cardMatch').style.display = 'none';
+  if ($('#cardMatch').style.display !== 'none') {
+    $('#ordenEstado').innerHTML = '<div class="aviso ok">✔ Foto de la orden guardada.</div>';
+    return;
+  }
   if (!navigator.onLine) {
-    $('#ordenEstado').innerHTML = '<div class="aviso info">Sin señal: busca la cuenta abajo. La foto se sube después.</div>';
+    $('#ordenEstado').innerHTML = '<div class="aviso info">Sin señal: escribe la cuenta arriba. La foto se sube después.</div>';
     return;
   }
   $('#ordenEstado').innerHTML = '<div class="aviso info"><span class="spinner"></span>Leyendo la orden…</div>';
   try {
     const r = await api('leerOrden', { imagen: foto.ia }, 100000);
     if (!r.ok) {
-      $('#ordenEstado').innerHTML = `<div class="aviso info">${esc(r.sinIA ? 'Lectura automática no activada.' : 'No se pudo leer: ' + (r.error || ''))} Busca la cuenta abajo.</div>`;
+      $('#ordenEstado').innerHTML = `<div class="aviso info">${esc(r.sinIA ? 'Lectura automática no activada.' : 'No se pudo leer: ' + (r.error || ''))} Escribe la cuenta arriba.</div>`;
       return;
     }
     const l = r.leido || {};
@@ -364,15 +369,16 @@ async function fotoOrden(foto) {
       pintarMatch(m.fila, l, m.coin);
     } else {
       const c = dig(l.cuenta) || dig(l.cuenta_completa).slice(-6);
-      $('#ordenEstado').innerHTML = `<div class="aviso mal">Leí cuenta <b>${esc(c || '¿?')}</b>, folio <b>${esc(l.folio || '¿?')}</b>, pero no está en la base. Revisa y búscala abajo.</div>`;
+      $('#ordenEstado').innerHTML = `<div class="aviso mal">Leí cuenta <b>${esc(c || '¿?')}</b>, folio <b>${esc(l.folio || '¿?')}</b>, pero no está en la base. Revisa y escríbela arriba.</div>`;
       if (c) { $('#busca').value = c; pintarBusqueda(); }
     }
   } catch (e) {
-    $('#ordenEstado').innerHTML = `<div class="aviso info">No se pudo leer: ${esc(e.message)}. Busca la cuenta abajo.</div>`;
+    $('#ordenEstado').innerHTML = `<div class="aviso info">No se pudo leer: ${esc(e.message)}. Escribe la cuenta arriba.</div>`;
   }
 }
 
 function badgeFila(f) {
+  if (ABIERTOS.some(t => t.fila && t.fila.cuenta === f.cuenta)) return '<span class="badge app">FALTA MEDIDOR NUEVO</span>';
   if (f.app) return '<span class="badge app">YA CAPTURADA EN APP</span>';
   if (f.estatus === 'INSTALADO') return '<span class="badge inst">INSTALADO</span>';
   return '';
@@ -407,11 +413,26 @@ function pintarBusqueda() {
   $('#resBusca').innerHTML = res.length
     ? res.map((f, i) => `<div class="res" data-i="${i}"><div class="t">${esc(f.cuenta)} · Folio ${esc(f.folio)} ${badgeFila(f)}</div><div class="muted">${esc(domicilio(f))}<br>Med. ${esc(f.mActual)} → ${esc(f.mNuevo)}</div></div>`).join('')
     : ($('#busca').value.length >= 3 ? `<p class="muted">Sin resultados${BASE.filas.length ? '' : ' (la base está vacía: actualízala con señal)'}.</p>` : '');
-  $$('#resBusca .res').forEach(el => el.onclick = () => pintarMatch(res[+el.dataset.i], null, null) || $('#cardMatch').scrollIntoView({ behavior: 'smooth' }));
+  const elegir = f => { $('#resBusca').innerHTML = ''; $('#busca').blur(); pintarMatch(f, null, null); };
+  $$('#resBusca .res').forEach(el => el.onclick = () => elegir(res[+el.dataset.i]));
+  const q = dig($('#busca').value);
+  const exacta = res.filter(f => dig(f.cuenta) === q);
+  if (exacta.length === 1 && q.length >= 6) {
+    if (T && ABIERTOS.some(t => t.fila && t.fila.cuenta === exacta[0].cuenta)) { $('#resBusca').innerHTML = ''; $('#busca').blur(); seleccionar(exacta[0], null); }
+    else elegir(exacta[0]);
+  }
+  else $('#cardMatch').style.display = 'none';
 }
 $('#busca').addEventListener('input', e => { e.target.value = dig(e.target.value); pintarBusqueda(); });
 
 async function seleccionar(f, leido) {
+  const abierto = ABIERTOS.find(t => t.fila && t.fila.cuenta === f.cuenta);
+  if (abierto) {
+    // Ya tiene la foto del medidor retirado: ir directo al medidor nuevo para cerrar el ciclo.
+    toast('Cuenta ' + f.cuenta + ': medidor retirado ya capturado (' + (abierto.fotos.antes ? abierto.fotos.antes.hora : abierto.inicio) + '). Sigue el medidor nuevo.', 4000);
+    reanudar(abierto);
+    return;
+  }
   if (f.app || f.estatus === 'INSTALADO') {
     const ok = await confirmar(`La cuenta ${f.cuenta} ya aparece como ${f.app ? 'capturada en la app (' + f.app + ')' : 'INSTALADA en el Excel'}. ¿Continuar de todos modos?`, 'Continuar', 'Cancelar');
     if (!ok) return;
@@ -608,12 +629,18 @@ function actualizarPie() {
     pie.classList.remove('hidden');
     b.textContent = etapa === 'antes' ? 'Siguiente: medidor nuevo →' : 'Siguiente: revisar →';
     b.disabled = !T.fotos[etapa] || (etapa === 'antes' ? !T.lectura.antes : !T.sello && !T.sinSello);
+    // En el paso del medidor nuevo: salir y dejar la cuenta pendiente para cerrarla después.
+    $('#btnPie2').classList.toggle('hidden', etapa !== 'despues');
+    $('#btnPie2').disabled = !T.fotos.antes || !T.lectura.antes;
   } else if (pantalla === 'final' && T) {
     pie.classList.remove('hidden');
+    $('#btnPie2').classList.add('hidden');
     b.textContent = '✔ Guardar y enviar';
     b.disabled = false;
   } else pie.classList.add('hidden');
 }
+
+$('#btnPie2').addEventListener('click', () => dejarPendiente());
 
 $('#btnPie').addEventListener('click', async () => {
   if (pantalla === 'piz') {
@@ -630,6 +657,59 @@ $('#btnPie').addEventListener('click', async () => {
 });
 
 /* ------------------------------------------------------------------ guardar en cola y subir */
+let ABIERTOS = []; // cambios con foto del medidor retirado, esperando la del nuevo
+
+async function quitarAbierto(id) {
+  ABIERTOS = ABIERTOS.filter(t => t.uid !== id);
+  await DB.set('abiertos', ABIERTOS);
+}
+
+/** Guarda la parte del medidor retirado y deja la cuenta pendiente para tomar después la del nuevo. */
+async function dejarPendiente() {
+  const f = T.fila, c = dig(f.cuenta) || f.cuenta;
+  const carpeta = `${c} - ${f.calle} ${[f.ext, f.int].filter(Boolean).join(' ')}`.trim();
+  const gps = T.gps;
+  const base = [
+    `Cuenta: ${T.cuentaCompleta || f.cuenta}`, `Folio: ${f.folio}`, `Domicilio: ${domicilio(f)}`,
+    gps ? `GPS: ${gps.lat},${gps.lng} (±${gps.acc} m)` : 'GPS: sin ubicación'
+  ];
+  // Las fotos ya tomadas se suben desde ahora, para no depender del teléfono.
+  const fotos = [[T.fotos.orden, `${c}_orden.jpg`, 'ORDEN'], [T.fotos.antes, `${c}_antes_01.jpg`, 'ANTES – medidor retirado, lectura ' + (T.lectura.antes || '')]];
+  try {
+    for (const [foto, nombre, etiqueta] of fotos) {
+      if (!foto || foto.qid) continue;
+      const id = T.uid + '-' + nombre + (foto.id ? '-' + foto.id : '');
+      await DB.colaPoner({
+        uid: id, tipo: 'foto', creado: Date.now(), nombre, carpeta, blob: foto.blob,
+        descripcion: [`Foto: ${etiqueta}`, `Tomada: ${foto.hora}`].concat(base).join('\n')
+      });
+      foto.qid = id;
+    }
+    ABIERTOS = ABIERTOS.filter(t => t.uid !== T.uid && !(t.fila && t.fila.cuenta === f.cuenta));
+    ABIERTOS.push(T);
+    await DB.set('abiertos', ABIERTOS);
+  } catch (e) {
+    toast('No hay espacio en el teléfono para guardar las fotos. Libera espacio e intenta de nuevo.', 6000);
+    return;
+  }
+  await DB.del('actual');
+  toast('⏸ Cuenta ' + f.cuenta + ' guardada (falta medidor nuevo). Captura la siguiente cuenta.', 4000);
+  sincronizar();
+  // Empieza de inmediato otra cuenta en la etapa del medidor retirado.
+  T = nuevoT();
+  guardarT();
+  limpiarOrden();
+  ir('orden');
+  setTimeout(() => $('#busca').focus(), 50);
+}
+
+function reanudar(t) {
+  T = t;
+  guardarT();
+  iniciarGPS();
+  irPizarron('despues');
+}
+
 async function guardarCambio(estatus) {
   const f = T.fila;
   const c = dig(f.cuenta) || f.cuenta;
@@ -642,11 +722,13 @@ async function guardarCambio(estatus) {
   const fotos = [];
   const agregar = (foto, nombre, etiqueta) => {
     if (!foto) return null;
-    const id = T.uid + '-' + nombre;
+    if (foto.qid) return foto.qid; // ya se mandó a la cola (cambio que se dejó pendiente)
+    const id = T.uid + '-' + nombre + (foto.id ? '-' + foto.id : '');
     fotos.push({
       uid: id, tipo: 'foto', creado: Date.now() + fotos.length, nombre, carpeta, blob: foto.blob,
       descripcion: [`Foto: ${etiqueta}`, `Tomada: ${foto.hora}`].concat(base).join('\n')
     });
+    foto.qid = id;
     return id;
   };
   const instalado = estatus === 'INSTALADO';
@@ -681,6 +763,7 @@ async function guardarCambio(estatus) {
   f.app = `${estatus} · ${S.cuadrilla} · ${reg.fechaCaptura}`;
   await DB.set('base', BASE);
   await DB.del('actual');
+  await quitarAbierto(T.uid);
   T = null;
   detenerGPS();
   toast(estatus === 'INSTALADO' ? '✔ Cambio guardado. Se sube en segundo plano.' : '✔ Registrado como no instalado.');
@@ -768,7 +851,14 @@ async function pintarHist() {
     : 'Ninguno todavía.';
 }
 
+function pintarAbiertos() {
+  $('#cardAbiertos').classList.toggle('hidden', !ABIERTOS.length);
+  $('#listaAbiertos').innerHTML = ABIERTOS.map((t, i) => `<div class="res" data-i="${i}"><div class="t">${esc(t.fila.cuenta)} <span class="badge app">MEDIDOR NUEVO</span></div><div class="muted">${esc(domicilio(t.fila))}<br>Retirado: ${esc(t.fila.mActual)} · lectura ${esc(t.lectura.antes)} · ${esc(t.fotos.antes ? t.fotos.antes.hora : t.inicio)}</div></div>`).join('');
+  $$('#listaAbiertos .res').forEach(el => el.onclick = () => reanudar(ABIERTOS[+el.dataset.i]));
+}
+
 function pintarInicio() {
+  pintarAbiertos();
   pintarCola();
   pintarHist();
   const n = BASE.filas.length;
@@ -828,6 +918,7 @@ $('#cfgGuardar').addEventListener('click', () => {
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   pintarRed();
   await cargarBaseLocal();
+  ABIERTOS = (await DB.get('abiertos')) || [];
   if (!apiUrl()) { ir('config'); return; }
   if (!S.token) { ir('login'); return; }
   ir('inicio');

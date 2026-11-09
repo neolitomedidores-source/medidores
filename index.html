@@ -41,7 +41,7 @@
   .camara svg{width:28px;height:28px}
   .fila{display:flex;gap:10px}
   .fila>*{flex:1}
-  .muted{color:var(--gris);font-size:14px}
+  .muted{color:var(--gris);font-size:14px;overflow-wrap:anywhere}
   .aviso{border-radius:12px;padding:12px 14px;margin:10px 0;font-size:15px}
   .aviso.ok{background:var(--verde-bg);color:var(--verde)}
   .aviso.mal{background:var(--rojo-bg);color:var(--rojo)}
@@ -117,6 +117,11 @@
   <!-- INICIO -->
   <section id="s-inicio">
     <button class="b1 grande" id="btnNuevo" style="margin:0 0 14px">＋ Nuevo cambio de medidor</button>
+    <div class="card hidden" id="cardAbiertos">
+      <b>Falta foto del medidor nuevo</b>
+      <div class="muted">Toca una cuenta para continuar donde te quedaste.</div>
+      <div id="listaAbiertos"></div>
+    </div>
     <div class="card" id="cardCola">
       <div class="fila" style="align-items:center">
         <div><b>Fotos y registros por subir</b><div class="muted" id="txtCola">—</div></div>
@@ -139,17 +144,17 @@
   <section id="s-orden">
     <div class="card">
       <p class="paso">Paso 1 de 3</p>
-      <h2>Foto de la orden</h2>
-      <p class="muted">Pon la orden completa y derecha en la foto. La app lee la cuenta sola.</p>
-      <button class="b1 camara" data-cam="orden">📷 Tomar foto de la orden</button>
-      <img id="imgOrden" class="foto hidden" alt="">
-      <div id="ordenEstado"></div>
+      <h2>Número de cuenta</h2>
+      <input id="busca" class="num" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="Ej. 339497" autocomplete="off">
+      <div id="resBusca"></div>
     </div>
     <div class="card" id="cardMatch" style="display:none"></div>
     <div class="card">
-      <label for="busca" style="margin-top:0">¿No la leyó? Escribe el número de cuenta</label>
-      <input id="busca" class="num" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="Ej. 339497" autocomplete="off">
-      <div id="resBusca"></div>
+      <b>Foto de la orden (opcional)</b>
+      <p class="muted" style="margin:4px 0 0">Se guarda como evidencia y, si no tecleaste la cuenta, la app intenta leerla.</p>
+      <button class="b2 camara" data-cam="orden">📷 Tomar foto de la orden</button>
+      <img id="imgOrden" class="foto hidden" alt="">
+      <div id="ordenEstado"></div>
     </div>
     <button class="b3" data-ir="inicio">Cancelar</button>
   </section>
@@ -207,7 +212,10 @@
   </section>
 </main>
 
-<div class="pie hidden" id="pie"><div><button id="btnPie" class="bverde grande">Siguiente</button></div></div>
+<div class="pie hidden" id="pie"><div class="fila">
+  <button id="btnPie2" class="b2 hidden" style="flex:0 0 38%;font-size:16px;padding:14px 8px">⏸ Otra cuenta</button>
+  <button id="btnPie" class="bverde grande">Siguiente</button>
+</div></div>
 
 <dialog id="dlgNoInst">
   <h2>No se pudo instalar</h2>
