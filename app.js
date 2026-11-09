@@ -521,34 +521,10 @@ async function fotoPizarron(foto) {
   T.rev[et] = null;
   mostrarImg('#imgPiz', foto.blob);
   actualizarPie();
-  if (!navigator.onLine) {
-    T.rev[et] = { estado: 'SIN VERIFICAR', items: [], nota: 'Sin señal al tomar la foto' };
-    pintarRevision();
-    return;
-  }
-  $('#pzRevision').innerHTML = '<div class="aviso info"><span class="spinner"></span>Revisando lo escrito en el pizarrón…</div>';
-  try {
-    const r = await api('leerPizarron', { imagen: foto.ia }, 100000);
-    if (T.fotos[et] !== foto) return; // ya tomaron otra
-    if (!r.ok) {
-      T.rev[et] = { estado: 'SIN VERIFICAR', items: [], nota: r.sinIA ? 'Revisión automática no activada' : (r.error || '') };
-    } else {
-      const l = r.leido || {};
-      const lect = dig(l.lectura), sello = dig(l.sello);
-      if (et === 'antes' && lect && !T.lectura.antes) T.lectura.antes = lect;
-      if (et === 'despues' && sello && !T.sello && !T.sinSello) T.sello = sello;
-      T.rev[et] = compararPizarron(l, et);
-    }
-  } catch (e) {
-    T.rev[et] = { estado: 'SIN VERIFICAR', items: [], nota: e.message };
-  }
+  // La revisión del pizarrón con IA se hace después en el servidor (no se hace esperar al técnico).
+  T.rev[et] = { estado: 'PENDIENTE DE REVISIÓN', items: [] };
   guardarT();
-  if (pantalla === 'piz' && etapa === et) {
-    $('#pzLectura').value = T.lectura[et] || '';
-    $('#pzSello').value = T.sello || '';
-    pintarRevision();
-    actualizarPie();
-  }
+  pintarRevision();
 }
 
 function compararPizarron(l, et) {
@@ -583,6 +559,7 @@ function pintarRevision() {
   const box = $('#pzRevision');
   if (!r) { box.innerHTML = ''; return; }
   const cls = r.estado === 'OK' ? 'ok' : r.estado.startsWith('REVISAR') ? 'mal' : 'info';
+  if (r.estado === 'PENDIENTE DE REVISIÓN') { box.innerHTML = '<div class="aviso ok">✔ Foto lista. La revisión del pizarrón se hace después, en automático.</div>'; return; }
   const titulo = r.estado === 'OK' ? '✔ El pizarrón coincide con la base'
     : r.estado.startsWith('REVISAR') ? '✖ Hay datos que no coinciden. Corrige el pizarrón y repite la foto.'
       : r.estado === 'SIN VERIFICAR' ? 'Sin verificar' + (r.nota ? ' – ' + r.nota : '')
@@ -708,7 +685,7 @@ async function dejarPendiente() {
         medidorRetirado: f.mActual, lecturaRetirado: T.lectura.antes || '', medidorNuevo: '', lecturaNuevo: '',
         sello: '', motivo: '', observaciones: '',
         lat: gps ? gps.lat : '', lng: gps ? gps.lng : '', precision: gps ? gps.acc : '',
-        revisionAntes: T.rev.antes ? T.rev.antes.estado : 'SIN VERIFICAR', revisionDespues: '', carpeta,
+        revisionAntes: T.fotos.antes ? 'PENDIENTE DE REVISIÓN' : '', revisionDespues: '', carpeta,
         refs: { fotoOrden: T.fotos.orden ? T.fotos.orden.qid : null, fotoAntes: T.fotos.antes ? T.fotos.antes.qid : null, fotoDespues: null, fotosExtra: [] }
       }
     });
@@ -766,8 +743,8 @@ async function guardarCambio(estatus) {
     medidorNuevo: instalado ? f.mNuevo : '', lecturaNuevo: instalado ? (T.lectura.despues || '0') : '',
     sello: T.sinSello ? 'SIN SELLO' : (T.sello || ''), motivo: instalado ? '' : (T.motivo || ''), observaciones: [T.sinSello ? 'Sin sello: ' + (T.motivoSello || '') : '', T.obs || ''].filter(Boolean).join(' · '),
     lat: gps ? gps.lat : '', lng: gps ? gps.lng : '', precision: gps ? gps.acc : '',
-    revisionAntes: T.fotos.antes ? (T.rev.antes ? T.rev.antes.estado : 'SIN VERIFICAR') : '',
-    revisionDespues: T.fotos.despues ? (T.rev.despues ? T.rev.despues.estado : 'SIN VERIFICAR') : '',
+    revisionAntes: T.fotos.antes ? 'PENDIENTE DE REVISIÓN' : '',
+    revisionDespues: instalado && T.fotos.despues ? 'PENDIENTE DE REVISIÓN' : '',
     carpeta,
     refs: {
       fotoOrden: agregar(T.fotos.orden, `${c}_orden.jpg`, 'ORDEN'),
@@ -937,25 +914,7 @@ async function fotoEdicion(foto) {
   const im = box.querySelector('img');
   im.src = 'data:image/jpeg;base64,' + foto.ia; im.classList.remove('hidden');
   actualizarPie();
-  const rev = box.querySelector('.edRev');
-  if (k === 'orden') { rev.innerHTML = '<div class="aviso ok">✔ Foto nueva lista para guardar</div>'; return; }
-  if (!navigator.onLine) { ed.rev[k] = 'SIN VERIFICAR'; rev.innerHTML = '<div class="aviso info">Foto nueva lista. Sin señal: no se revisó.</div>'; return; }
-  rev.innerHTML = '<div class="aviso info"><span class="spinner"></span>Revisando lo escrito en el pizarrón…</div>';
-  try {
-    const r = await api('leerPizarron', { imagen: foto.ia }, 100000);
-    if (!r.ok) { ed.rev[k] = 'SIN VERIFICAR'; rev.innerHTML = `<div class="aviso info">Foto nueva lista. ${esc(r.error || 'No se revisó')}</div>`; return; }
-    const guardado = T;
-    T = { fila: ed.fila, lectura: { antes: dig($('#edLectura').value) }, sello: dig($('#edSello').value), sinSello: $('#edSinSello').checked };
-    const res = compararPizarron(r.leido || {}, k);
-    T = guardado;
-    ed.rev[k] = res.estado;
-    const sim = { ok: '✔', mal: '✖', q: '?' };
-    rev.innerHTML = `<div class="aviso ${res.estado === 'OK' ? 'ok' : res.estado.startsWith('REVISAR') ? 'mal' : 'info'}"><b>${esc(res.estado === 'OK' ? '✔ El pizarrón coincide' : res.estado)}</b>` +
-      res.items.map(i => `<div class="chk"><span>${esc(i.campo)}: ${esc(i.leido || '—')}</span><b class="${i.est}">${sim[i.est]}</b></div>`).join('') + '</div>';
-  } catch (e) {
-    ed.rev[k] = 'SIN VERIFICAR';
-    rev.innerHTML = `<div class="aviso info">Foto nueva lista. No se revisó: ${esc(e.message)}</div>`;
-  }
+  box.querySelector('.edRev').innerHTML = '<div class="aviso ok">✔ Foto nueva lista para guardar' + (k === 'orden' ? '' : ' (el pizarrón se revisa después, en automático)') + '</div>';
 }
 
 async function guardarEdicion() {
@@ -966,6 +925,9 @@ async function guardarEdicion() {
   if (cambios.includes('lectura')) reg.lecturaRetirado = dig($('#edLectura').value);
   if (cambios.includes('sello')) reg.sello = $('#edSinSello').checked ? 'SIN SELLO' : dig($('#edSello').value);
   if (cambios.includes('observaciones')) reg.observaciones = $('#edObs').value.trim();
+  // Si cambió un dato que se compara con el pizarrón, se vuelve a revisar.
+  if (cambios.includes('lectura') && E.fotos.antes) reg.revisionAntes = 'PENDIENTE DE REVISIÓN';
+  if (cambios.includes('sello') && E.fotos.despues) reg.revisionDespues = 'PENDIENTE DE REVISIÓN';
   const nombres = { antes: `${c}_antes_01.jpg`, despues: `${c}_despues_02.jpg`, orden: `${c}_orden.jpg` };
   const campos = { antes: 'fotoAntes', despues: 'fotoDespues', orden: 'fotoOrden' };
   const etiqueta = { antes: 'ANTES – medidor retirado (corregida)', despues: 'DESPUÉS – medidor nuevo (corregida)', orden: 'ORDEN (corregida)' };
@@ -977,8 +939,8 @@ async function guardarEdicion() {
         descripcion: [`Foto: ${etiqueta[k]}`, `Tomada: ${fo.hora}`, `Cuenta: ${E.cuentaCompleta || f.cuenta}`, `Folio: ${f.folio}`, `Domicilio: ${domicilio(f)}`].join('\n')
       });
       reg.refs[campos[k]] = id;
-      if (k === 'antes') reg.revisionAntes = E.rev.antes || 'SIN VERIFICAR';
-      if (k === 'despues') reg.revisionDespues = E.rev.despues || 'SIN VERIFICAR';
+      if (k === 'antes') reg.revisionAntes = 'PENDIENTE DE REVISIÓN';
+      if (k === 'despues') reg.revisionDespues = 'PENDIENTE DE REVISIÓN';
     }
     await DB.colaPoner({ uid: E.uid + '-edit-' + Date.now(), tipo: 'registro', creado: Date.now() + 10, registro: reg });
   } catch (e) {
