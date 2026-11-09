@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#123a5e">
+<meta name="format-detection" content="telephone=no, address=no, email=no">
 <title>Medidores · Campo</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
@@ -160,29 +161,29 @@
       <h2 id="pzTitulo">Medidor retirado</h2>
       <p class="muted" style="margin-top:-4px" id="pzNota">Escribe en el pizarrón, a mano:</p>
       <div class="pizarron" id="pzGuia"></div>
+      <div id="pzCampos" style="margin-top:14px">
+        <label for="pzLectura" id="pzLectLabel">Lectura</label>
+        <input id="pzLectura" class="num" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+        <div id="pzSelloBox" class="hidden">
+          <label for="pzSello">Número de sello</label>
+          <input id="pzSello" class="num" inputmode="numeric" autocomplete="off">
+          <label style="display:flex;gap:10px;align-items:center;font-weight:600;margin-top:14px">
+            <input type="checkbox" id="pzSinSello" style="width:26px;height:26px;flex:0 0 auto"> No se pudo poner el sello
+          </label>
+          <div id="pzSinSelloBox" class="hidden">
+            <label for="pzMotivoSello">¿Por qué?</label>
+            <select id="pzMotivoSello">
+              <option>No hay sellos disponibles</option>
+              <option>El medidor o la toma no lo permite</option>
+              <option>Usuario no permitió</option>
+              <option>Otro</option>
+            </select>
+          </div>
+        </div>
+      </div>
       <button class="b1 camara" data-cam="piz" style="margin-top:14px">📷 Tomar foto del pizarrón</button>
       <img id="imgPiz" class="foto hidden" alt="">
       <div id="pzRevision"></div>
-    </div>
-    <div class="card" id="pzCampos">
-      <label for="pzLectura" style="margin-top:0" id="pzLectLabel">Lectura</label>
-      <input id="pzLectura" class="num" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
-      <div id="pzSelloBox" class="hidden">
-        <label for="pzSello">Número de sello</label>
-        <input id="pzSello" class="num" inputmode="numeric" autocomplete="off">
-        <label style="display:flex;gap:10px;align-items:center;font-weight:600;margin-top:14px">
-          <input type="checkbox" id="pzSinSello" style="width:26px;height:26px;flex:0 0 auto"> No se pudo poner el sello
-        </label>
-        <div id="pzSinSelloBox" class="hidden">
-          <label for="pzMotivoSello">¿Por qué?</label>
-          <select id="pzMotivoSello">
-            <option>No hay sellos disponibles</option>
-            <option>El medidor o la toma no lo permite</option>
-            <option>Usuario no permitió</option>
-            <option>Otro</option>
-          </select>
-        </div>
-      </div>
     </div>
     <button class="b3" id="btnNoInst">No se pudo instalar</button>
     <button class="b3" id="pzAtras">← Regresar</button>

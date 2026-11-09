@@ -445,7 +445,12 @@ function irPizarron(et) {
   ir('piz');
 }
 
-$('#pzLectura').addEventListener('input', e => { T.lectura[etapa] = dig(e.target.value); e.target.value = T.lectura[etapa]; actualizarPie(); guardarT(); });
+$('#pzLectura').addEventListener('input', e => {
+  T.lectura[etapa] = dig(e.target.value); e.target.value = T.lectura[etapa];
+  const r = T.rev[etapa];
+  if (r && r.leido) { T.rev[etapa] = compararPizarron(r.leido, etapa); pintarRevision(); }
+  actualizarPie(); guardarT();
+});
 $('#pzSello').addEventListener('input', e => {
   T.sello = dig(e.target.value); e.target.value = T.sello;
   const r = T.rev.despues;
@@ -515,7 +520,10 @@ function compararPizarron(l, et) {
   items.push({ campo: 'Medidor (NDM)', leido: l.medidor || '', est: !mLei ? 'q' : mLei === mEsp ? 'ok' : 'mal' });
   const lect = dig(l.lectura);
   if (et === 'despues') items.push({ campo: 'Lectura (vacía)', leido: l.lectura || 'vacía', est: !lect || /^0+$/.test(lect) ? 'ok' : 'mal' });
-  else items.push({ campo: 'Lectura', leido: l.lectura || '', est: lect ? 'ok' : 'q' });
+  else {
+    const lE = dig(T.lectura.antes);
+    items.push({ campo: 'Lectura', leido: l.lectura || '', est: !lect ? 'q' : !lE || lect === lE ? 'ok' : 'mal' });
+  }
   if (et === 'despues') {
     const sL = dig(l.sello), sE = dig(T.sello);
     if (T.sinSello) items.push({ campo: 'Sello (marcado sin sello)', leido: l.sello || 'vacío', est: sL ? 'mal' : 'ok' });
