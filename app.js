@@ -82,14 +82,24 @@ async function api(action, datos = {}, ms = 90000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const r = await fetch(apiUrl(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(Object.assign({ action, token: S.token }, datos)),
-      signal: ctrl.signal,
-      redirect: 'follow'
-    });
-    const j = await r.json();
+    let r;
+    try {
+      r = await fetch(apiUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({ action, token: S.token }, datos)),
+        signal: ctrl.signal,
+        redirect: 'follow'
+      });
+    } catch (e) {
+      throw new Error(e.name === 'AbortError' ? 'el servidor tardó más de ' + Math.round(ms / 1000) + ' s' : 'no hubo conexión con el servidor');
+    }
+    const txt = await r.text();
+    let j;
+    try { j = JSON.parse(txt); } catch (e) {
+      const m = txt.match(/<title>([^<]*)<\/title>/i) || txt.match(/(Exception|Error)[^<]{0,120}/);
+      throw new Error('el servidor respondió con un error (HTTP ' + r.status + (m ? ': ' + (m[1] || m[0]).trim() : '') + ')');
+    }
     if (j.error === 'SESION') {
       S.token = null; guardarSesion();
       toast(j.mensaje || 'Vuelve a entrar');
@@ -342,7 +352,7 @@ async function fotoOrden(foto) {
   }
   $('#ordenEstado').innerHTML = '<div class="aviso info"><span class="spinner"></span>Leyendo la orden…</div>';
   try {
-    const r = await api('leerOrden', { imagen: foto.ia }, 60000);
+    const r = await api('leerOrden', { imagen: foto.ia }, 100000);
     if (!r.ok) {
       $('#ordenEstado').innerHTML = `<div class="aviso info">${esc(r.sinIA ? 'Lectura automática no activada.' : 'No se pudo leer: ' + (r.error || ''))} Busca la cuenta abajo.</div>`;
       return;
@@ -358,7 +368,7 @@ async function fotoOrden(foto) {
       if (c) { $('#busca').value = c; pintarBusqueda(); }
     }
   } catch (e) {
-    $('#ordenEstado').innerHTML = '<div class="aviso info">No hubo respuesta. Busca la cuenta abajo.</div>';
+    $('#ordenEstado').innerHTML = `<div class="aviso info">No se pudo leer: ${esc(e.message)}. Busca la cuenta abajo.</div>`;
   }
 }
 
@@ -489,7 +499,7 @@ async function fotoPizarron(foto) {
   }
   $('#pzRevision').innerHTML = '<div class="aviso info"><span class="spinner"></span>Revisando lo escrito en el pizarrón…</div>';
   try {
-    const r = await api('leerPizarron', { imagen: foto.ia }, 60000);
+    const r = await api('leerPizarron', { imagen: foto.ia }, 100000);
     if (T.fotos[et] !== foto) return; // ya tomaron otra
     if (!r.ok) {
       T.rev[et] = { estado: 'SIN VERIFICAR', items: [], nota: r.sinIA ? 'Revisión automática no activada' : (r.error || '') };
@@ -501,7 +511,7 @@ async function fotoPizarron(foto) {
       T.rev[et] = compararPizarron(l, et);
     }
   } catch (e) {
-    T.rev[et] = { estado: 'SIN VERIFICAR', items: [], nota: 'Sin respuesta del servidor' };
+    T.rev[et] = { estado: 'SIN VERIFICAR', items: [], nota: e.message };
   }
   guardarT();
   if (pantalla === 'piz' && etapa === et) {
