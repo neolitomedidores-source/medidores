@@ -140,7 +140,7 @@ async function actualizarBase(silencioso) {
     if (!silencioso) $('#txtBase').innerHTML = '<span class="spinner"></span>Actualizando…';
     const r = await api('base');
     if (r.ok) {
-      BASE = { archivo: r.archivo, actualizado: r.actualizado, descargada: ahora(), filas: r.filas };
+      BASE = { archivo: r.archivo, actualizado: r.actualizado, descargada: ahora(), filas: r.filas, materiales: r.materiales || [] };
       await DB.set('base', BASE);
       if (!silencioso) toast('Base actualizada: ' + r.filas.length + ' cuentas');
     } else if (!silencioso) toast('No se pudo actualizar: ' + (r.error || ''));
@@ -328,7 +328,7 @@ function nuevoT() {
     uid: uid(), inicio: ahora(), fila: null, cuentaCompleta: '',
     fotos: { orden: null, antes: null, despues: null, extras: [], noinst: null },
     rev: { antes: null, despues: null },
-    lectura: { antes: '', despues: '0' }, sello: '', obs: '', gps: null
+    lectura: { antes: '', despues: '0' }, sello: '', obs: '', gps: null, materiales: {}
   };
 }
 async function guardarT() { if (T) await DB.set('actual', T); }
@@ -464,7 +464,7 @@ function irPizarron(et) {
   etapa = et;
   const f = T.fila;
   const antes = et === 'antes';
-  $('#pzPaso').textContent = antes ? 'Paso 2 de 3' : 'Paso 3 de 3';
+  $('#pzPaso').textContent = antes ? 'Paso 2 de 4' : 'Paso 3 de 4';
   $('#pzTitulo').textContent = antes ? 'Medidor retirado (viejo)' : 'Medidor nuevo instalado';
   $('#pzGuia').innerHTML = `
     <div class="l"><span class="k">CUENTA:</span><span class="v">${esc(T.cuentaCompleta || f.cuenta)}</span></div>
@@ -599,6 +599,7 @@ function pintarFinal() {
     <dt>Retirado</dt><dd>${esc(f.mActual)} · lectura ${esc(T.lectura.antes)}</dd>
     <dt>Nuevo</dt><dd>${esc(f.mNuevo)} · lectura ${esc(T.lectura.despues)}</dd>
     <dt>Sello</dt><dd>${T.sinSello ? 'SIN SELLO · ' + esc(T.motivoSello || '') : esc(T.sello || '—')}</dd>
+    <dt>Material</dt><dd>${textoMaterial(T.materiales) || 'Ninguno'}</dd>
     <dt>Pizarrones</dt><dd>Antes: ${esc(rA)}<br>Después: ${esc(rD)}</dd>
     <dt>GPS</dt><dd>${T.gps ? esc(T.gps.lat + ', ' + T.gps.lng + ' (±' + T.gps.acc + ' m)') : 'sin ubicación'}</dd>`;
   const ex = $('#extras');
@@ -608,14 +609,15 @@ function pintarFinal() {
   $('#obs').value = T.obs || '';
 }
 $('#obs').addEventListener('input', e => { T.obs = e.target.value; guardarT(); });
-$('#finAtras').addEventListener('click', () => irPizarron('despues'));
+$('#finAtras').addEventListener('click', () => irMaterial());
+$('#matAtras').addEventListener('click', () => irPizarron('despues'));
 
 /* ---------- Botón inferior */
 function actualizarPie() {
   const pie = $('#pie'), b = $('#btnPie');
   if (pantalla === 'piz' && T) {
     pie.classList.remove('hidden');
-    b.textContent = etapa === 'antes' ? 'Siguiente: medidor nuevo →' : 'Siguiente: revisar →';
+    b.textContent = etapa === 'antes' ? 'Siguiente: medidor nuevo →' : 'Siguiente: material →';
     b.disabled = !T.fotos[etapa] || (etapa === 'antes' ? !T.lectura.antes : !T.sello && !T.sinSello);
     // En el paso del medidor nuevo: salir y dejar la cuenta pendiente para cerrarla después.
     $('#btnPie2').classList.toggle('hidden', etapa !== 'despues');
@@ -625,6 +627,11 @@ function actualizarPie() {
     $('#btnPie2').classList.add('hidden');
     b.textContent = '✔ Guardar cambios';
     b.disabled = !cambiosEdicion().length;
+  } else if (pantalla === 'mat' && T) {
+    pie.classList.remove('hidden');
+    $('#btnPie2').classList.add('hidden');
+    b.textContent = 'Siguiente: revisar →';
+    b.disabled = false;
   } else if (pantalla === 'final' && T) {
     pie.classList.remove('hidden');
     $('#btnPie2').classList.add('hidden');
@@ -643,13 +650,127 @@ $('#btnPie').addEventListener('click', async () => {
       if (!ok) return;
     }
     if (etapa === 'antes') irPizarron('despues');
-    else { ir('final'); pintarFinal(); }
+    else irMaterial();
+  } else if (pantalla === 'mat') {
+    if (!usoMaterial(T.materiales)) {
+      const ok = await confirmar('No marcaste ningún material. ¿Confirmas que no se usó material en este cambio?', 'Sí, ninguno', 'Regresar');
+      if (!ok) return;
+    }
+    T.materialConfirmado = true; guardarT();
+    ir('final'); pintarFinal();
   } else if (pantalla === 'editar') {
     await guardarEdicion();
   } else if (pantalla === 'final') {
     await guardarCambio('INSTALADO');
   }
 });
+
+/* ------------------------------------------------------------------ paso 4: material utilizado */
+function listaMateriales() { return (BASE.materiales || []); }
+const esMetro = m => m.unidad === 'M';
+function usoMaterial(v) { return Object.values(v || {}).some(n => Number(n) > 0); }
+/** Todas las columnas de material de CONTROL con su cantidad (0 si no se usó). */
+function mapaMateriales(v) {
+  const o = {};
+  listaMateriales().forEach(m => { o[m.nombre] = Number((v || {})[m.nombre]) || 0; });
+  Object.keys(v || {}).forEach(k => { if (!(k in o) && Number(v[k]) > 0) o[k] = Number(v[k]); });
+  return o;
+}
+function textoMaterial(v) {
+  return Object.keys(v || {}).filter(k => Number(v[k]) > 0)
+    .map(k => `${esc(k)}: <b>${esc(v[k])}</b>${esMetro(listaMateriales().find(m => m.nombre === k) || {}) ? ' m' : ''}`).join('<br>');
+}
+
+/** Captura de material: se elige uno en la lista, se pone la cantidad y se agrega. valores se modifica en el lugar. */
+function pintarMateriales(cont, valores, alCambiar) {
+  const lista = listaMateriales();
+  if (!lista.length) {
+    cont.innerHTML = '<div class="aviso info">No hay lista de materiales. Actualiza la base con señal (botón "Actualizar base" en el inicio).</div>';
+    return;
+  }
+  const paso = m => (esMetro(m) ? 0.1 : 1);
+  const limpiar = (m, n) => {
+    n = Number(String(n).replace(',', '.')) || 0;
+    n = esMetro(m) ? Math.round(n * 10) / 10 : Math.round(n);
+    return Math.max(0, n);
+  };
+  const fmt = (m, n) => (esMetro(m) ? Number(n).toFixed(1) : String(n));
+  cont.innerHTML = `
+    <label style="margin-top:4px">Material</label>
+    <select class="matSel"></select>
+    <div class="mat matNuevo hidden" style="border:0">
+      <span class="n">Cantidad<small class="matUni"></small></span>
+      <button type="button" data-d="-1" aria-label="menos">−</button>
+      <input class="matCant" aria-label="cantidad">
+      <button type="button" data-d="1" aria-label="más">+</button>
+    </div>
+    <button type="button" class="b1 matAgregar" disabled>＋ Agregar material</button>
+    <div style="margin-top:16px"><b>Material agregado</b></div>
+    <div class="matLista"></div>`;
+  const sel = cont.querySelector('.matSel'), nuevo = cont.querySelector('.matNuevo'), cant = cont.querySelector('.matCant');
+  const btnAg = cont.querySelector('.matAgregar'), listaEl = cont.querySelector('.matLista');
+  const actual = () => lista.find(m => m.nombre === sel.value);
+
+  function pintarSelect() {
+    const libres = lista.filter(m => !(Number(valores[m.nombre]) > 0));
+    sel.innerHTML = '<option value="">Elige un material…</option>' +
+      libres.map(m => `<option value="${esc(m.nombre)}">${esc(m.nombre)} (${esMetro(m) ? 'm' : 'pza'})</option>`).join('');
+    nuevo.classList.add('hidden'); btnAg.disabled = true;
+  }
+  function pintarLista() {
+    const usados = lista.filter(m => Number(valores[m.nombre]) > 0);
+    listaEl.innerHTML = usados.length ? usados.map(m => `
+      <div class="mat usado" data-n="${esc(m.nombre)}">
+        <span class="n">${esc(m.nombre)}<small>${esMetro(m) ? 'metros' : 'piezas'}</small></span>
+        <button type="button" data-d="-1" aria-label="menos">−</button>
+        <input value="${fmt(m, valores[m.nombre])}" inputmode="${esMetro(m) ? 'decimal' : 'numeric'}" aria-label="${esc(m.nombre)}">
+        <button type="button" data-d="1" aria-label="más">+</button>
+        <button type="button" class="quitar" aria-label="quitar" style="border-color:var(--rojo);color:var(--rojo);font-size:20px">✕</button>
+      </div>`).join('') : '<p class="muted" style="margin:6px 0">Todavía no agregas material.</p>';
+    listaEl.querySelectorAll('.mat').forEach(row => {
+      const m = lista.find(x => x.nombre === row.dataset.n), inp = row.querySelector('input');
+      const poner = n => {
+        n = limpiar(m, n);
+        if (n > 0) { valores[m.nombre] = n; inp.value = fmt(m, n); alCambiar && alCambiar(); }
+        else quitar();
+      };
+      const quitar = () => { delete valores[m.nombre]; pintarSelect(); pintarLista(); alCambiar && alCambiar(); };
+      row.querySelectorAll('[data-d]').forEach(b => b.onclick = () => poner((Number(inp.value) || 0) + Number(b.dataset.d) * paso(m)));
+      row.querySelector('.quitar').onclick = quitar;
+      inp.onfocus = () => inp.select();
+      inp.onchange = () => poner(inp.value);
+    });
+  }
+  sel.onchange = () => {
+    const m = actual();
+    nuevo.classList.toggle('hidden', !m); btnAg.disabled = !m;
+    if (!m) return;
+    cont.querySelector('.matUni').textContent = esMetro(m) ? 'metros (de 0.1 en 0.1)' : 'piezas';
+    cant.setAttribute('inputmode', esMetro(m) ? 'decimal' : 'numeric');
+    cant.value = fmt(m, 1);
+  };
+  nuevo.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+    const m = actual(); if (!m) return;
+    cant.value = fmt(m, Math.max(paso(m), limpiar(m, (Number(String(cant.value).replace(',', '.')) || 0) + Number(b.dataset.d) * paso(m))));
+  });
+  cant.onfocus = () => cant.select();
+  cant.onchange = () => { const m = actual(); if (m) cant.value = fmt(m, limpiar(m, cant.value)); };
+  btnAg.onclick = () => {
+    const m = actual(); if (!m) return;
+    const n = limpiar(m, cant.value);
+    if (!(n > 0)) { toast('Pon una cantidad mayor a 0'); return; }
+    valores[m.nombre] = n;
+    pintarSelect(); pintarLista(); alCambiar && alCambiar();
+    toast('Agregado: ' + m.nombre + ' · ' + fmt(m, n) + (esMetro(m) ? ' m' : ' pza'));
+  };
+  pintarSelect(); pintarLista();
+}
+
+function irMaterial() {
+  T.materiales = T.materiales || {};
+  pintarMateriales($('#matLista'), T.materiales, () => guardarT());
+  ir('mat');
+}
 
 /* ------------------------------------------------------------------ guardar en cola y subir */
 let ABIERTOS = []; // cambios con foto del medidor retirado, esperando la del nuevo
@@ -744,6 +865,8 @@ async function guardarCambio(estatus) {
     domicilio: domicilio(f), estatus,
     medidorRetirado: instalado ? f.mActual : '', lecturaRetirado: T.lectura.antes || '',
     medidorNuevo: instalado ? f.mNuevo : '', lecturaNuevo: instalado ? (T.lectura.despues || '0') : '',
+    materiales: instalado ? mapaMateriales(T.materiales) : undefined,
+    material: instalado ? (usoMaterial(T.materiales) ? 'CON MATERIAL' : 'SIN MATERIAL') : '',
     sello: T.sinSello ? 'SIN SELLO' : (T.sello || ''), motivo: instalado ? '' : (T.motivo || ''), observaciones: [T.sinSello ? 'Sin sello: ' + (T.motivoSello || '') : '', T.obs || ''].filter(Boolean).join(' · '),
     lat: gps ? gps.lat : '', lng: gps ? gps.lng : '', precision: gps ? gps.acc : '',
     revisionAntes: T.fotos.antes ? 'PENDIENTE DE REVISIÓN' : '',
@@ -863,7 +986,7 @@ async function guardarCerrado(t, reg) {
   lista.unshift({
     uid: t.uid, fila: t.fila, cuentaCompleta: t.cuentaCompleta, estatus: reg.estatus, carpeta: reg.carpeta, fecha: reg.fechaCaptura,
     lectura: { antes: t.lectura.antes || '' }, sello: reg.sello === 'SIN SELLO' ? '' : (reg.sello || ''), sinSello: reg.sello === 'SIN SELLO',
-    obs: reg.observaciones || '',
+    obs: reg.observaciones || '', materiales: Object.assign({}, t.materiales || {}),
     fotos: { orden: ft('orden'), antes: ft('antes'), despues: reg.estatus === 'INSTALADO' ? ft('despues') : null }
   });
   await DB.set('cerrados', lista.slice(0, 40));
@@ -883,6 +1006,9 @@ async function abrirEdicion(uid) {
   $('#edSelloBox').classList.toggle('hidden', !inst);
   $('#edSello').value = E.sello; $('#edSinSello').checked = E.sinSello; $('#edSello').disabled = E.sinSello;
   $('#edObs').value = E.obs;
+  E.materiales = Object.assign({}, E.orig.materiales || {});
+  $('#edMatCard').classList.toggle('hidden', !inst);
+  pintarMateriales($('#edMatLista'), E.materiales, () => actualizarPie());
   $$('#edFotos [data-edk]').forEach(box => {
     const k = box.dataset.edk, fo = E.fotos[k];
     box.classList.toggle('hidden', k === 'despues' ? !inst : k === 'antes' ? !fo : false);
@@ -900,6 +1026,7 @@ function cambiosEdicion() {
   if (dig($('#edLectura').value) !== (E.orig.lectura.antes || '') && E.fotos.antes) c.push('lectura');
   if (E.estatus === 'INSTALADO' && ($('#edSinSello').checked !== E.orig.sinSello || (!$('#edSinSello').checked && dig($('#edSello').value) !== E.orig.sello))) c.push('sello');
   if ($('#edObs').value.trim() !== (E.orig.obs || '').trim()) c.push('observaciones');
+  if (E.estatus === 'INSTALADO' && JSON.stringify(mapaMateriales(E.materiales)) !== JSON.stringify(mapaMateriales(E.orig.materiales || {}))) c.push('material');
   Object.keys(E.nuevas).forEach(k => c.push('foto ' + ({ antes: 'medidor retirado', despues: 'medidor nuevo', orden: 'orden' }[k])));
   return c;
 }
@@ -928,6 +1055,10 @@ async function guardarEdicion() {
   if (cambios.includes('lectura')) reg.lecturaRetirado = dig($('#edLectura').value);
   if (cambios.includes('sello')) reg.sello = $('#edSinSello').checked ? 'SIN SELLO' : dig($('#edSello').value);
   if (cambios.includes('observaciones')) reg.observaciones = $('#edObs').value.trim();
+  if (cambios.includes('material')) {
+    reg.materiales = mapaMateriales(E.materiales);
+    reg.material = usoMaterial(E.materiales) ? 'CON MATERIAL' : 'SIN MATERIAL';
+  }
   // Si cambió un dato que se compara con el pizarrón, se vuelve a revisar.
   if (cambios.includes('lectura') && E.fotos.antes) reg.revisionAntes = 'PENDIENTE DE REVISIÓN';
   if (cambios.includes('sello') && E.fotos.despues) reg.revisionDespues = 'PENDIENTE DE REVISIÓN';
@@ -957,6 +1088,7 @@ async function guardarEdicion() {
     if (reg.lecturaRetirado !== undefined) x.lectura.antes = reg.lecturaRetirado;
     if (reg.sello !== undefined) { x.sinSello = reg.sello === 'SIN SELLO'; x.sello = x.sinSello ? '' : reg.sello; }
     if (reg.observaciones !== undefined) x.obs = reg.observaciones;
+    if (reg.materiales !== undefined) x.materiales = Object.assign({}, E.materiales);
     Object.keys(E.nuevas).forEach(k => { x.fotos[k] = { ia: E.nuevas[k].ia, hora: E.nuevas[k].hora }; });
     await DB.set('cerrados', lista);
   }
