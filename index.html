@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#123a5e">
+<title>Medidores · Campo</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root{
+    --azul:#123a5e; --azul2:#1d5a8e; --fondo:#eef2f6; --tarjeta:#fff; --texto:#13202c; --gris:#5b6b7a;
+    --verde:#137a3a; --verde-bg:#e3f4ea; --rojo:#b3261e; --rojo-bg:#fbe7e5; --ambar:#8a5a00; --ambar-bg:#fff3d6;
+    --borde:#d4dce4; --r:14px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--fondo);color:var(--texto);font:17px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  header{position:sticky;top:0;z-index:5;background:var(--azul);color:#fff;padding:12px 16px calc(12px);display:flex;align-items:center;gap:10px}
+  header h1{font-size:18px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  header .chip{background:rgba(255,255,255,.15);border-radius:999px;padding:4px 10px;font-size:13px;white-space:nowrap}
+  header .chip.pend{background:#f2b705;color:#2a1d00;font-weight:700}
+  main{max-width:640px;margin:0 auto;padding:14px 14px 120px}
+  section{display:none}
+  section.on{display:block}
+  .card{background:var(--tarjeta);border-radius:var(--r);padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,.06);border:1px solid var(--borde)}
+  .paso{font-size:13px;font-weight:700;letter-spacing:.06em;color:var(--azul2);text-transform:uppercase;margin:0 0 4px}
+  h2{font-size:22px;margin:0 0 10px}
+  label{display:block;font-weight:600;margin:12px 0 6px}
+  input,select,textarea{width:100%;font:inherit;padding:14px;border:2px solid var(--borde);border-radius:12px;background:#fff;color:var(--texto)}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--azul2)}
+  .num{font-size:24px;font-weight:700;letter-spacing:.04em;font-variant-numeric:tabular-nums}
+  button{font:inherit;font-weight:700;border:0;border-radius:12px;padding:16px;width:100%;cursor:pointer;margin-top:10px}
+  .b1{background:var(--azul2);color:#fff}
+  .b2{background:#fff;color:var(--azul2);border:2px solid var(--azul2)}
+  .b3{background:transparent;color:var(--gris);font-weight:600;text-decoration:underline;padding:10px}
+  .bverde{background:var(--verde);color:#fff}
+  .grande{font-size:20px;padding:20px}
+  button:disabled{opacity:.45}
+  .camara{display:flex;align-items:center;justify-content:center;gap:10px;font-size:20px;padding:22px}
+  .camara svg{width:28px;height:28px}
+  .fila{display:flex;gap:10px}
+  .fila>*{flex:1}
+  .muted{color:var(--gris);font-size:14px}
+  .aviso{border-radius:12px;padding:12px 14px;margin:10px 0;font-size:15px}
+  .aviso.ok{background:var(--verde-bg);color:var(--verde)}
+  .aviso.mal{background:var(--rojo-bg);color:var(--rojo)}
+  .aviso.info{background:var(--ambar-bg);color:var(--ambar)}
+  .pizarron{background:#fbfdff;border:3px solid #9aa9b7;border-radius:10px;padding:14px 16px;font-family:"Comic Sans MS","Segoe Print",cursive,system-ui}
+  .pizarron .l{display:flex;gap:10px;align-items:baseline;padding:6px 0;border-bottom:1px dashed #d0d8e0}
+  .pizarron .l:last-child{border-bottom:0}
+  .pizarron .k{font-weight:700;min-width:105px;color:#222;font-size:16px}
+  .pizarron .v{color:#1546b8;font-size:22px;font-weight:700;word-break:break-word}
+  .pizarron .v.dom{font-size:18px}
+  .pizarron .l.cambia{background:#fff3d6;margin:0 -10px;padding:6px 10px;border-radius:6px}
+  .pizarron .l.cambia::after{content:"CAMBIA";margin-left:auto;align-self:center;font-size:10px;color:#8a5a00;font-family:system-ui;font-weight:800;letter-spacing:.05em}
+  .datos{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:16px}
+  .datos dt{color:var(--gris)}
+  .datos dd{margin:0;font-weight:700;word-break:break-word}
+  .foto{width:100%;border-radius:12px;display:block;margin-top:10px;max-height:52vh;object-fit:contain;background:#000}
+  .chk{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eef1f4;font-size:15px}
+  .chk:last-child{border-bottom:0}
+  .chk b.ok{color:var(--verde)} .chk b.mal{color:var(--rojo)} .chk b.q{color:var(--ambar)}
+  .res{padding:12px;border:2px solid var(--borde);border-radius:12px;margin-top:8px;background:#fff;cursor:pointer}
+  .res:active{border-color:var(--azul2)}
+  .res .t{font-weight:700}
+  .badge{display:inline-block;font-size:12px;font-weight:700;border-radius:6px;padding:2px 6px;margin-left:6px}
+  .badge.inst{background:var(--verde-bg);color:var(--verde)}
+  .badge.app{background:var(--ambar-bg);color:var(--ambar)}
+  .hist{display:flex;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid #eef1f4;font-size:15px}
+  .hist:last-child{border-bottom:0}
+  .spinner{display:inline-block;width:18px;height:18px;border:3px solid currentColor;border-right-color:transparent;border-radius:50%;animation:g 1s linear infinite;vertical-align:-3px;margin-right:6px}
+  @keyframes g{to{transform:rotate(360deg)}}
+  .extras{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
+  .extras img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px}
+  .pie{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--borde);padding:10px 14px calc(10px + env(safe-area-inset-bottom));z-index:4}
+  .pie>div{max-width:640px;margin:0 auto}
+  .pie button{margin-top:0}
+  .hidden{display:none!important}
+  dialog{border:0;border-radius:16px;padding:18px;width:min(92vw,520px)}
+  dialog::backdrop{background:rgba(0,0,0,.45)}
+  #toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:#13202c;color:#fff;padding:12px 16px;border-radius:12px;font-size:15px;z-index:20;max-width:92vw;opacity:0;transition:opacity .2s;pointer-events:none}
+  #toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <h1 id="titulo">Medidores · Campo</h1>
+  <span id="chipCola" class="chip hidden"></span>
+  <span id="chipRed" class="chip">…</span>
+</header>
+
+<main>
+  <!-- CONFIGURACIÓN (solo si falta la URL) -->
+  <section id="s-config">
+    <div class="card">
+      <h2>Falta configurar el servidor</h2>
+      <p class="muted">Pega la URL de la aplicación web de Apps Script (termina en <b>/exec</b>).</p>
+      <input id="cfgUrl" placeholder="https://script.google.com/macros/s/…/exec">
+      <button class="b1" id="cfgGuardar">Guardar</button>
+    </div>
+  </section>
+
+  <!-- LOGIN -->
+  <section id="s-login">
+    <div class="card">
+      <h2>Entrar</h2>
+      <label for="lgCuadrilla">Cuadrilla</label>
+      <select id="lgCuadrilla"><option value="">Cargando…</option></select>
+      <label for="lgPass">Contraseña</label>
+      <input id="lgPass" type="password" inputmode="numeric" autocomplete="current-password">
+      <div id="lgMsg"></div>
+      <button class="b1 grande" id="lgEntrar">Entrar</button>
+    </div>
+  </section>
+
+  <!-- INICIO -->
+  <section id="s-inicio">
+    <button class="b1 grande" id="btnNuevo" style="margin:0 0 14px">＋ Nuevo cambio de medidor</button>
+    <div class="card" id="cardCola">
+      <div class="fila" style="align-items:center">
+        <div><b>Fotos y registros por subir</b><div class="muted" id="txtCola">—</div></div>
+        <button class="b2" id="btnSubir" style="flex:0 0 auto;width:auto;margin:0;padding:12px 16px">Subir ahora</button>
+      </div>
+    </div>
+    <div class="card">
+      <b>Cambios capturados en este teléfono</b>
+      <div id="listaHist" class="muted" style="margin-top:6px">Ninguno todavía.</div>
+    </div>
+    <div class="card">
+      <b>Base de cuentas</b>
+      <div class="muted" id="txtBase">—</div>
+      <button class="b2" id="btnBase">Actualizar base</button>
+    </div>
+    <button class="b3" id="btnSalir">Salir de la cuadrilla</button>
+  </section>
+
+  <!-- PASO 1: ORDEN -->
+  <section id="s-orden">
+    <div class="card">
+      <p class="paso">Paso 1 de 3</p>
+      <h2>Foto de la orden</h2>
+      <p class="muted">Pon la orden completa y derecha en la foto. La app lee la cuenta sola.</p>
+      <button class="b1 camara" data-cam="orden">📷 Tomar foto de la orden</button>
+      <img id="imgOrden" class="foto hidden" alt="">
+      <div id="ordenEstado"></div>
+    </div>
+    <div class="card" id="cardMatch" style="display:none"></div>
+    <div class="card">
+      <label for="busca" style="margin-top:0">¿No la leyó? Busca por cuenta, folio, medidor o calle</label>
+      <input id="busca" inputmode="search" placeholder="Ej. 339497 · 114014 · San Pedro 139" autocomplete="off">
+      <div id="resBusca"></div>
+    </div>
+    <button class="b3" data-ir="inicio">Cancelar</button>
+  </section>
+
+  <!-- PASO 2 Y 3: PIZARRÓN -->
+  <section id="s-piz">
+    <div class="card">
+      <p class="paso" id="pzPaso">Paso 2 de 3</p>
+      <h2 id="pzTitulo">Medidor retirado</h2>
+      <p class="muted" style="margin-top:-4px" id="pzNota">Escribe en el pizarrón, a mano:</p>
+      <div class="pizarron" id="pzGuia"></div>
+      <button class="b1 camara" data-cam="piz" style="margin-top:14px">📷 Tomar foto del pizarrón</button>
+      <img id="imgPiz" class="foto hidden" alt="">
+      <div id="pzRevision"></div>
+    </div>
+    <div class="card" id="pzCampos">
+      <label for="pzLectura" style="margin-top:0" id="pzLectLabel">Lectura</label>
+      <input id="pzLectura" class="num" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+      <div id="pzSelloBox" class="hidden">
+        <label for="pzSello">Número de sello</label>
+        <input id="pzSello" class="num" inputmode="numeric" autocomplete="off">
+        <label style="display:flex;gap:10px;align-items:center;font-weight:600;margin-top:14px">
+          <input type="checkbox" id="pzSinSello" style="width:26px;height:26px;flex:0 0 auto"> No se pudo poner el sello
+        </label>
+        <div id="pzSinSelloBox" class="hidden">
+          <label for="pzMotivoSello">¿Por qué?</label>
+          <select id="pzMotivoSello">
+            <option>No hay sellos disponibles</option>
+            <option>El medidor o la toma no lo permite</option>
+            <option>Usuario no permitió</option>
+            <option>Otro</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <button class="b3" id="btnNoInst">No se pudo instalar</button>
+    <button class="b3" id="pzAtras">← Regresar</button>
+  </section>
+
+  <!-- FINAL -->
+  <section id="s-final">
+    <div class="card">
+      <p class="paso">Último paso</p>
+      <h2>Revisar y enviar</h2>
+      <dl class="datos" id="resumen"></dl>
+    </div>
+    <div class="card">
+      <b>Fotos adicionales (opcional)</b>
+      <div class="extras" id="extras"></div>
+      <button class="b2 camara" data-cam="extra">📷 Agregar foto</button>
+      <label for="obs">Observaciones</label>
+      <textarea id="obs" rows="2"></textarea>
+    </div>
+    <button class="b3" id="finAtras">← Regresar</button>
+  </section>
+</main>
+
+<div class="pie hidden" id="pie"><div><button id="btnPie" class="bverde grande">Siguiente</button></div></div>
+
+<dialog id="dlgNoInst">
+  <h2>No se pudo instalar</h2>
+  <label for="niMotivo">Motivo</label>
+  <select id="niMotivo">
+    <option>Domicilio cerrado / sin acceso</option>
+    <option>Usuario no permitió el cambio</option>
+    <option>Medidor no localizado</option>
+    <option>Toma o cuadro en mal estado</option>
+    <option>Medidor nuevo no coincide</option>
+    <option>Otro</option>
+  </select>
+  <label for="niObs">Observaciones</label>
+  <textarea id="niObs" rows="2"></textarea>
+  <p class="muted">Toma una foto de evidencia (fachada o toma).</p>
+  <button class="b2 camara" data-cam="noinst">📷 Foto de evidencia</button>
+  <img id="imgNoInst" class="foto hidden" alt="">
+  <div class="fila"><button class="b2" id="niCancelar">Cancelar</button><button class="b1" id="niGuardar">Guardar</button></div>
+</dialog>
+
+<dialog id="dlgConfirm">
+  <p id="cfTexto"></p>
+  <div class="fila"><button class="b2" id="cfNo">No</button><button class="b1" id="cfSi">Sí</button></div>
+</dialog>
+
+<input type="file" id="cam" accept="image/*" capture="environment" class="hidden">
+<div id="toast"></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
