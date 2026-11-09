@@ -142,19 +142,16 @@ function domicilio(f) {
   return `${f.calle}${num ? ' #' + num : ''}${f.colonia ? ', COL. ' + f.colonia : ''}`;
 }
 
+/** Búsqueda solo por número de cuenta (también acepta los últimos dígitos). */
 function buscar(q) {
-  q = norm(q);
-  if (q.length < 2) return [];
-  const soloNum = /^[\d ]+$/.test(q);
   const dq = dig(q);
-  const pal = q.split(' ').filter(Boolean);
-  return BASE.filas.filter(f => {
-    if (soloNum) return [f.cuenta, f.folio, f.mActual, f.mNuevo].some(x => dig(x).includes(dq));
-    const calle = norm(f.calle), num = norm(f.ext + f.int);
-    return pal.every(p => /^\d/.test(p)
-      ? num.startsWith(p) || f.cuenta === p || f.folio === p
-      : calle.includes(p) || norm(f.int) === p);
-  }).slice(0, 25);
+  if (dq.length < 3) return [];
+  return BASE.filas
+    .filter(f => dig(f.cuenta).includes(dq))
+    .map(f => ({ f, o: dig(f.cuenta) === dq ? 0 : dig(f.cuenta).startsWith(dq) ? 1 : 2 }))
+    .sort((x, y) => x.o - y.o)
+    .map(x => x.f)
+    .slice(0, 25);
 }
 
 /** Busca en la base la fila que corresponde a lo leído de la orden. */
@@ -399,10 +396,10 @@ function pintarBusqueda() {
   const res = buscar($('#busca').value);
   $('#resBusca').innerHTML = res.length
     ? res.map((f, i) => `<div class="res" data-i="${i}"><div class="t">${esc(f.cuenta)} · Folio ${esc(f.folio)} ${badgeFila(f)}</div><div class="muted">${esc(domicilio(f))}<br>Med. ${esc(f.mActual)} → ${esc(f.mNuevo)}</div></div>`).join('')
-    : ($('#busca').value.trim().length >= 2 ? `<p class="muted">Sin resultados${BASE.filas.length ? '' : ' (la base está vacía: actualízala con señal)'}.</p>` : '');
+    : ($('#busca').value.length >= 3 ? `<p class="muted">Sin resultados${BASE.filas.length ? '' : ' (la base está vacía: actualízala con señal)'}.</p>` : '');
   $$('#resBusca .res').forEach(el => el.onclick = () => pintarMatch(res[+el.dataset.i], null, null) || $('#cardMatch').scrollIntoView({ behavior: 'smooth' }));
 }
-$('#busca').addEventListener('input', pintarBusqueda);
+$('#busca').addEventListener('input', e => { e.target.value = dig(e.target.value); pintarBusqueda(); });
 
 async function seleccionar(f, leido) {
   if (f.app || f.estatus === 'INSTALADO') {

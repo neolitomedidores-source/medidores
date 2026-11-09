@@ -146,8 +146,8 @@
     </div>
     <div class="card" id="cardMatch" style="display:none"></div>
     <div class="card">
-      <label for="busca" style="margin-top:0">¿No la leyó? Busca por cuenta, folio, medidor o calle</label>
-      <input id="busca" inputmode="search" placeholder="Ej. 339497 · 114014 · San Pedro 139" autocomplete="off">
+      <label for="busca" style="margin-top:0">¿No la leyó? Escribe el número de cuenta</label>
+      <input id="busca" class="num" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="12" placeholder="Ej. 339497" autocomplete="off">
       <div id="resBusca"></div>
     </div>
     <button class="b3" data-ir="inicio">Cancelar</button>
